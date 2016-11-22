@@ -1,0 +1,45 @@
+heat_template_version: 2013-05-23
+parameters:
+ image:
+   type: string
+ flavor:
+   type: string
+   default: 2
+ name:
+   type: string
+   default: mistral-test
+resources:
+ create_vm:
+   type: OS::Mistral::Workflow
+   properties:
+     type: direct
+     input:
+       name: { get_param: name }
+       image: { get_param: image }
+       flavor: { get_param: flavor }
+     output:
+       vm_id: <% $.vm_id %>
+     tasks:
+       - name: create_server
+         action: nova.servers_create name=<% $.name %> image=<% $.image %> flavor=<% $.flavor %>
+         publish:
+           vm_id: <% $.create_server.id %>
+         on_success:
+           - check_server_exists
+       - name: check_server_exists
+         action: nova.servers_get server=<% $.vm_id %>
+         publish:
+           server_exists: True
+         on_success:
+           - wait_instance
+       - name: wait_instance
+         action: nova.servers_find id=<% $.vm_id %> status='ACTIVE'
+         policies:
+         retry:
+           delay: 5
+           count: 15
+outputs:
+ executions:
+   value: { get_attr: [create_vm, executions] }
+ data:
+   value: { get_attr: [create_vm, data] }
