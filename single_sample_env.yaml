@@ -1,0 +1,4 @@
+parameters:
+  key_name: heat_key
+  image_id: cirros
+  flavor: m1.tiny

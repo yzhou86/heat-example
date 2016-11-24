@@ -1,0 +1,143 @@
+heat_template_version: 2015-04-30
+
+description: Simple template to deploy a single compute instance
+
+parameters:
+  key_name:
+    type: string
+    label: Key Name
+    description: Name of key-pair to be used for compute instance
+    default: heat_key
+  image_id:
+    type: string
+    label: Image ID
+    description: Image to be used for compute instance
+    default: cirros
+  flavor:
+    type: string
+    label: Instance Type
+    description: Type of instance (flavor) to be used
+    default: m1.tiny
+    constraints:
+      - allowed_values: [ m1.tiny, m1.medium, m1.large, m1.xlarge ]
+        description: Value must be one of m1.tiny, m1.medium, m1.large or m1.xlarge.
+  admin_password:
+      type: string
+      label: Admin user password
+      description: Password to be used for database server
+      default: 'Password123'
+      hidden: true
+      constraints:
+        - length: { min: 8, max: 16 }
+          description: Password length must be between 8 and 16 characters.
+        - allowed_pattern: "[A-Z]+[a-zA-Z0-9]*"
+          description: Password must start with an uppercase character.
+
+resources:
+  new_net:
+    type: OS::Neutron::Net
+  new_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      network_id: { get_resource: new_net }
+      cidr: "10.8.1.0/24"
+      dns_nameservers: [ "8.8.8.8", "8.8.4.4" ]
+      ip_version: 4
+  floating_ip:
+    type: OS::Nova::FloatingIP
+    properties:
+      pool: public
+  router1:
+    type: OS::Neutron::Router
+    properties:
+      external_gateway_info: { network: public }
+  subnet1_interface:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router_id: { get_resource: router1 }
+      subnet: { get_resource: new_subnet }
+  web_secgroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      rules:
+        - protocol: tcp
+          remote_ip_prefix: 0.0.0.0/0
+          port_range_min: 80
+          port_range_max: 80
+        - protocol: tcp
+          remote_ip_prefix: 0.0.0.0/0
+          port_range_min: 443
+          port_range_max: 443
+  web_server_01:
+    type: OS::Nova::Server
+    depends_on: db_server
+    properties:
+      key_name: { get_param: key_name }
+      image: { get_param: image_id }
+      flavor: { get_param: flavor }
+      networks:
+        - network: new_net
+      security_groups:
+        - default
+        - { get_resource: web_secgroup }
+  web_server_02:
+    type: OS::Nova::Server
+    depends_on: db_server
+    properties:
+      key_name: { get_param: key_name }
+      image: { get_param: image_id }
+      flavor: { get_param: flavor }
+      networks:
+        - network: new_net
+      security_groups:
+        - default
+        - { get_resource: web_secgroup }
+  db_server_key:
+    type: OS::Nova::KeyPair
+    properties:
+      save_private_key: true
+      name: db_server_key
+  db_volume:
+    type: OS::Cinder::Volume
+    properties:
+      size: 10
+  db_server:
+    type: OS::Nova::Server
+    properties:
+      key_name: { get_resource: db_server_key }
+      image: { get_param: image_id }
+      flavor: { get_param: flavor }
+      networks:
+        - network: new_net
+      security_groups:
+        - default
+        - { get_resource: web_secgroup }
+      user_data:
+        str_replace:
+          template: |
+            #!/bin/bash
+            echo "Setting  password to  " $password
+            echo $password |passwd --stdin wbxbuilds
+          params:
+            $password: { get_param: admin_password }
+  volume_attachment:
+    type: OS::Cinder::VolumeAttachment
+    properties:
+      volume_id: { get_resource: db_volume }
+      instance_uuid: { get_resource: db_server }
+  association:
+    type: OS::Nova::FloatingIPAssociation
+    properties:
+      floating_ip: { get_resource: floating_ip }
+      server_id: { get_resource: web_server_01 }
+
+outputs:
+  web_server_ips:
+    description: The IP address of the deployed instance
+    value: { get_attr: [web_server_01, first_address],  get_attr: [web_server_02, first_address]}
+  db_server_ip:
+    description: The IP address of the deployed instance
+    value: { get_attr: [db_server, first_address] }
+  db_server_key:
+    description: Private key
+    value: { get_attr: [ db_server_key, private_key ] }
