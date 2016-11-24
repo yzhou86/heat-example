@@ -2,9 +2,10 @@ heat_template_version: 2013-05-23
 parameters:
  image:
    type: string
+   default: cirros
  flavor:
    type: string
-   default: 2
+   default: m1.tiny
  name:
    type: string
    default: mistral-test

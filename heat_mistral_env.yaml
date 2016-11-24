@@ -1,0 +1,4 @@
+parameters:
+  name: mistral_test
+  image: cirros
+  flavor: m1.tiny
